@@ -1,6 +1,6 @@
 # Analysis of affymetrix expression data 
-# Platform: 
-# 
+# Platform: MOE430v2
+# Script modified from original tutorial script from the Functional Genomic Technologies course 2022 by Simon Tomlinson
 
 # Install packages to load and analyze data
 #if (!requireNamespace("BiocManager", quietly = TRUE))
@@ -23,7 +23,7 @@ mydata <- ReadAffy(filenames=pData(adf)$Filename, phenoData=adf)
 # Make quality control plots of the raw data
 # Density plot
 png("QC_histogram")
-hist(mydata, main='Density plot of signal intensity', col=pData(adf)$Color) # Insert title and label samples by color
+hist(mydata, main='Density plot of signal intensity', col=pData(adf)$Color)
 dev.off()
 # Boxplot for quantile distribution
 png("QC_boxplot")
@@ -32,14 +32,14 @@ dev.off()
 # Double check present and absent calls, difference between groups vs sample quality
 calls <- exprs(mas5calls(mydata))
 called <- data.frame(colSums(calls=='A'), colSums(calls=='P'))
-write.table(called, file="calls.txt", quote=F, sep="/t", col.names=NA)
+write.table(called, file="calls.txt", quote=F, sep="\t", col.names=NA)
 
 # Normalize data using RMA, returns log2-transformed normalized values
 # eset holds normalized data
 eset <- rma(mydata)
 # 'values' hold matrix of normalized expression values
 values <- exprs(eset)
-# Boxplot again but for normalized values
+# Boxplot of normalized values
 png("RMA_boxplot")
 boxplot(values, col=pData(adf)$Color, las=2, names=rownames(pData(adf)), main='Boxplot of normalized expression values', xlab='Samples', ylab='Log Intensity')
 dev.off()
@@ -75,19 +75,6 @@ values10 <- 2**values
 values[1:20,]
 values10[1:20,]
 
-# Build a fold change table
-# Check order of Sample Name and Probe IDs
-mysamples <- sampleNames(eset)
-probesets <- probeNames(mydata)
-mysamples
-probesets[1:10]
-CPC.mean <- apply(values10[, c("CPC.1","CPC.2","CPC.3")], 1, mean)
-CTL.mean <- apply(values10[, c("Ctl.1","Ctl.2","Ctl.3")], 1, mean)
-CPC_CTL_FC <- CPC.mean/CTL.mean
-all_data <- cbind(CPC.mean, CTL.mean, CPC_CTL_FC)
-colnames(all_data)
-write.table(all_data, file="group_means.txt", quote=F, sep="/t", col.names=NA)
-
 # Rename samples in eset
 sampleNames(eset) <- rownames(pData(adf))
 
@@ -104,6 +91,19 @@ tmp <- data.frame(ID=ID, Symbol=Symbol, Name=Name, stringsAsFactors=F)
 tmp[tmp=="NA"] <- NA
 # Assign annotation table as feature data of eset
 fData(eset) <- tmp
+
+# Build a fold change table
+# Check order of Sample Name and Probe IDs
+mysamples <- sampleNames(eset)
+probesets <- probeNames(mydata)
+mysamples
+probesets[1:10]
+CPC.mean <- apply(values10[, c("CPC.1","CPC.2","CPC.3")], 1, mean)
+CTL.mean <- apply(values10[, c("Ctl.1","Ctl.2","Ctl.3")], 1, mean)
+CPC_CTL_FC <- CPC.mean/CTL.mean
+FC_GSE49448 <- cbind(Symbol, Name, CPC.mean, CTL.mean, CPC_CTL_FC)
+colnames(FC_GSE49448)
+write.table(FC_GSE49448, file="FC_GSE49448.txt", quote=F, sep="\t", col.names=NA)
 
 # Construct design matrix, response~model
 # response: gene profiles
@@ -123,11 +123,28 @@ fit2 <- eBayes(contrasts.fit(fit, contrastmatrix))
 # 'fdr' specifies statistical adjustment by false discovery rate
 # 'number' is maximum number of genes to list
 limmaresults <- topTable(fit2, coef=1, adjust="fdr", number=nrow(eset))
-write.table(limmaresults, "limmaresults.txt")
+write.table(limmaresults, "limmaresults.txt", sep="\t")
+
+# Plot a Volcanoplot of the DE genes, highlighting the top 20 genes
+BiocManager::install('EnhancedVolcano')
+library(EnhancedVolcano)
+limma_df <- as.data.frame(limmaresults)
+#png("volcano_DEgenes.png", width=1000, height=800)
+#EnhancedVolcano(limma_df, x="logFC", y="P.Value", lab=limma_df$Symbol, title="CPC versus #Control", labSize=5.0, pointSize=3.0, pCutoff=0.00001, FCcutoff=4, legendPosition='right', #legendLabSize=12, legendIconSize=4.0, xlab=bquote(~Log[2]~ 'fold change'))
+#dev.off()
+
+png("volcano_DEgenes_padj.png", width=1000, height=800)
+EnhancedVolcano(limma_df, x="logFC", y="adj.P.Val", lab=limma_df$Symbol, 
+title="GSE49448: CPC versus Control", subtitle="Limma results", 
+labSize=6.0, pointSize=1.0, pCutoff=0.001, FCcutoff=4, 
+legendPosition='right', legendLabSize=12, legendIconSize=4.0, 
+xlab=bquote(~Log[2]~ 'fold change'), 
+ylab=bquote(~Log[10]~ 'adj.P.val'), ylim=c(0,-log10(0.00001)), )
+dev.off()
 
 # Determine overlapping gene expression between groups
 classify <- classifyTestsF(fit2)
-png("vennDiagram_classified.png")
+png("vennDiagram_classified.png", width=1000, height=1000)
 vennDiagram(classify)
 dev.off()
 
@@ -165,11 +182,21 @@ camera_results <- camera(eset_t, index=H.indices, design=design,
 contrast=contrastmatrix[,1])
 write.table(camera_results, "func.enrichment_camera.txt", sep="\t")
 
+# Plot heatmap of CAMERA results
+cm_matrix <- apply(camera_results[,c("PValue","FDR")], c(1,2), "*",-1)
+cm_annotate <- data.frame("Direction"=camera_results$Direction)
+rownames(cm_annotate) <- rownames(cm_matrix)
+png("heatmap_camera.png", height=1000, width=800)
+pheatmap(as.matrix(cm_matrix), main="GSE49448: CAMERA Enriched Genes in CPC group over control",
+cluster_cols=F, annotation_row=cm_annotate, cutree_rows=4,
+fontsize=10)
+dev.off()
+
 # Other methods
 mroast_results <- mroast(eset_t, index=H.indices, design=design,
 contrast=contrastmatrix[,1], adjust.method="BH")
 write.table(mroast_results, "func.enrichment_mroast.txt", sep="\t")
-
+#
 romer_results <- romer(eset_t, index=H.indices, design=design,
 contrast=contrastmatrix[,1])
 write.table(romer_results, "func.enrichment_romer.txt", sep="\t")
