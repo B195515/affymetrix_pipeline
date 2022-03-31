@@ -20,72 +20,76 @@ library(pheatmap)
 adf <- read.AnnotatedDataFrame("targets.txt", header=TRUE, row.names=1, as.is=TRUE)
 
 # Load CEL files listed in ADF
-mydata <- ReadAffy(filenames=pData(adf)$Filename, phenoData=adf)
+GSE49448 <- ReadAffy(filenames=pData(adf)$Filename, phenoData=adf)
 
 # QC plots of raw data
 # Density plot
-png("QC_histogram")
-hist(mydata, main='Density plot of signal intensity', col=pData(adf)$Color)
+png("QC_histogram.png", width=1000, height=1000)
+hist(GSE49448, 
+	main='GSE49448: Density plot of signal intensity', 
+	col=pData(adf)$Color,
+	cex.main=2, cex.lab=2,cex.axis=2)
 dev.off()
+
 # Boxplot for quantile distribution
-png("QC_boxplot")
-boxplot(mydata, col=pData(adf)$Color, 
+png("QC_boxplot.png", width=1000, height=1000)
+boxplot(GSE49448, col=pData(adf)$Color, 
 	las=2, names=rownames(pData(adf)), 
-	main='Boxplot of samples', 
+	main='GSE49448: Boxplot of signal intensity', 
 	xlab='Samples', ylab='Log Intensity')
 dev.off()
+
 # Confirm abs/pres calls, difference between groups vs sample quality
-calls <- exprs(mas5calls(mydata))
+calls <- exprs(mas5calls(GSE49448))
 called <- data.frame(colSums(calls=='A'), colSums(calls=='P'))
-write.table(called, file="calls.txt", 
+write.table(called, file="MAS5calls.txt", 
 	quote=F, sep="\t", col.names=NA)
 
 # RMA-normalization outputs log2-transformed values
 # eset holds normalized data
-eset <- rma(mydata)
+eset <- rma(GSE49448)
 # 'values' hold matrix of normalized expression values
-values <- exprs(eset)
+RMA_values <- exprs(eset)
 # Boxplot of normalized values
-png("RMA_boxplot")
-boxplot(values, col=pData(adf)$Color, 
+png("RMA_boxplot.png")
+boxplot(RMA_values, col=pData(adf)$Color, 
 	las=2, names=rownames(pData(adf)), 
-	main='Boxplot of normalized expression values',
+	main='GSE49448: Boxplot of normalized expression values',
 	xlab='Samples', ylab='Log Intensity')
 dev.off()
 
 # Dependency of log-ratio & mean intensity level of variables
 # x-axis = mean intensity, y-axis = log-ratio
-# Except most points (genes) in MA ~0 as majority of genes don't change
-png("MA_normalized_all", width = 4.5, height = 4, units = 'in', res = 300)
-mva.pairs(values, labels=rownames(pData(adf)), 
-	main="MVA plot of CPC vs Control samples", 
-	cex.main=1, cex.axis=0.5, cex=0.5)
+# Exc])ept most points (genes) in MA ~0 as majority of genes don't change
+png("MA_normalized_all.png", width=850, height=800)
+mva.pairs(RMA_values, 
+	main="GSE49448: MVA plot of CPC vs Control samples", 
+	ylim=c(-1.5,1.5))
 dev.off()
 
 # Features relationship by hierarchical clustering
 # Change column header from filename to sample name
-colnames(values) <- rownames(pData(adf))
+colnames(RMA_values) <- rownames(pData(adf))
 # Use Pearson's correlation coefficient to perform HC with average linkage
-HC <- hclust(as.dist(1-cor(values, method="pearson")), method="average")
-png("HC_pearsonavg_normalized")
+HC <- hclust(as.dist(1-cor(RMA_values, method="pearson")), method="average")
+png("HC_pearsonavg_normalized.png")
 plot(HC)
 dev.off()
 
 # Determine dataset artificial feats explaining variability
 # Transpose values matrix and scales variables to have unit variance
-pca <- prcomp(t(values), scale=T)
-png("PCA_normalized")
+pca <- prcomp(t(RMA_values), scale=T)
+png("PCA_normalized.png")
 s3d <- scatterplot3d(pca$x[,1:3], pch=19, color=rainbow(nrow(adf)))
 s3d.coords <- s3d$xyz.convert(pca$x[,1:3])
 text(s3d.coords$x, s3d.coords$y, 
-	labels=colnames(values), 
+	labels=colnames(RMA_values), 
 	pos=3, offset=0.5)
 dev.off()
 
 # Convert normalized expression values from log2 and check
-values10 <- 2**values
-values[1:20,]
-values10[1:20,]
+RMA_values10 <- 2**RMA_values
+print(RMA_values[1:20,], RMA_values10[1:20,])
 
 # Rename samples in eset
 sampleNames(eset) <- rownames(pData(adf))
@@ -106,12 +110,12 @@ fData(eset) <- tmp
 
 # Check order of Sample Name and Probe IDs
 mysamples <- sampleNames(eset)
-probesets <- probeNames(mydata)
+probesets <- probeNames(GSE49448)
 mysamples
 probesets[1:10]
 # Build FC table
-CPC.mean <- apply(values10[, c("CPC.1","CPC.2","CPC.3")], 1, mean)
-CTL.mean <- apply(values10[, c("Ctl.1","Ctl.2","Ctl.3")], 1, mean)
+CPC.mean <- apply(RMA_values10[, c("CPC.1","CPC.2","CPC.3")], 1, mean)
+CTL.mean <- apply(RMA_values10[, c("Ctl.1","Ctl.2","Ctl.3")], 1, mean)
 CPC_CTL_FC <- CPC.mean/CTL.mean
 FC_GSE49448 <- cbind(Symbol, Name, CPC.mean, CTL.mean, CPC_CTL_FC)
 colnames(FC_GSE49448)
@@ -165,7 +169,7 @@ Mm.H <- readRDS("Mm.h.all.v7.1.entrez.rds")
 # Annotate eset with ENTREZID to map to gene signatures
 # Select some keys from the package, with PROBEID as primary key
 res <- select(mouse4302.db, keys=rownames(eset), 
-columns=c("ENTREZID","ENSEMBL","SYMBOL"), 
+	columns=c("ENTREZID","ENSEMBL","SYMBOL"), 
 	keytype="PROBEID")
 
 # Do a table join of eset and res
@@ -219,3 +223,19 @@ write.table(romer_results, "func.enrichment_romer.txt", sep="\t")
 #sv <- squeezeVar(fit$sigma^2, df=fit$df.residual)
 
 #save.image("~/FGT/ICA1/workspace.RData")
+
+# Generate data for Shiny app
+library("dplyr")
+shiny_merged <- left_join(
+	limmaresults[1:50,], 
+	cbind(ID, RMA_values10), 
+	by="ID", keep=TRUE, copy=TRUE)
+rownames(shiny_merged) <- with(shiny_merged, paste(Symbol, ID.x, sep=" / "))
+# Select only cols with sample names, convert to num
+expression <- shiny_merged[,(ncol(shiny_merged)-6+1):ncol(shiny_merged)]
+expression[] <- lapply(expression, as.numeric)
+save(expression, file="expression.Rdata")
+# Read targets file as a DF
+experiment <- read.table("targets.txt", header=T, as.is=T, row.names=1)
+save(experiment, file="experiment.Rdata")
+
