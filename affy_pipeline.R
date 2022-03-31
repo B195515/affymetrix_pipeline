@@ -10,51 +10,53 @@
 library(affy)
 library(limma)
 library(scatterplot3d)
-library(mouse4302.db) #load library for the chip
+library(mouse4302.db) # chip
 library(annotate)
 BiocManager::install('EnhancedVolcano')
 library(EnhancedVolcano)
 library(pheatmap)
 
+GSE <- "GSE49448"
+
 # Load targets file as ADF object
 adf <- read.AnnotatedDataFrame("targets.txt", header=TRUE, row.names=1, as.is=TRUE)
 
 # Load CEL files listed in ADF
-GSE49448 <- ReadAffy(filenames=pData(adf)$Filename, phenoData=adf)
+allsamples <- ReadAffy(filenames=pData(adf)$Filename, phenoData=adf)
 
 # QC plots of raw data
 # Density plot
 png("QC_histogram.png", width=1000, height=1000)
-hist(GSE49448, 
-	main='GSE49448: Density plot of signal intensity', 
+hist(allsamples, 
+	main=paste(GSE,":Density plot of signal intensity"), 
 	col=pData(adf)$Color,
 	cex.main=2, cex.lab=2,cex.axis=2)
 dev.off()
 
 # Boxplot for quantile distribution
 png("QC_boxplot.png", width=1000, height=1000)
-boxplot(GSE49448, col=pData(adf)$Color, 
+boxplot(allsamples, col=pData(adf)$Color, 
 	las=2, names=rownames(pData(adf)), 
-	main='GSE49448: Boxplot of signal intensity', 
+	main=paste(GSE,":Boxplot of signal intensity"), 
 	xlab='Samples', ylab='Log Intensity')
 dev.off()
 
 # Confirm abs/pres calls, difference between groups vs sample quality
-calls <- exprs(mas5calls(GSE49448))
+calls <- exprs(mas5calls(allsamples))
 called <- data.frame(colSums(calls=='A'), colSums(calls=='P'))
 write.table(called, file="MAS5calls.txt", 
 	quote=F, sep="\t", col.names=NA)
 
 # RMA-normalization outputs log2-transformed values
 # eset holds normalized data
-eset <- rma(GSE49448)
+eset <- rma(allsamples)
 # 'values' hold matrix of normalized expression values
 RMA_values <- exprs(eset)
 # Boxplot of normalized values
 png("RMA_boxplot.png")
 boxplot(RMA_values, col=pData(adf)$Color, 
 	las=2, names=rownames(pData(adf)), 
-	main='GSE49448: Boxplot of normalized expression values',
+	main=paste(GSE,":Boxplot of normalized expression values"),
 	xlab='Samples', ylab='Log Intensity')
 dev.off()
 
@@ -63,21 +65,21 @@ dev.off()
 # Exc])ept most points (genes) in MA ~0 as majority of genes don't change
 png("MA_normalized_all.png", width=850, height=800)
 mva.pairs(RMA_values, 
-	main="GSE49448: MVA plot of CPC vs Control samples", 
+	main=paste(GSE,":MVA plot of CPC vs Control samples"), 
 	ylim=c(-1.5,1.5))
 dev.off()
 
 # Features relationship by hierarchical clustering
 # Change column header from filename to sample name
 colnames(RMA_values) <- rownames(pData(adf))
-# Use Pearson's correlation coefficient to perform HC with average linkage
+# Pearson's corr coeff for HC with average linkage
 HC <- hclust(as.dist(1-cor(RMA_values, method="pearson")), method="average")
 png("HC_pearsonavg_normalized.png")
 plot(HC)
 dev.off()
 
 # Determine dataset artificial feats explaining variability
-# Transpose values matrix and scales variables to have unit variance
+# Transpose values matrix and scale variables to have unit variance
 pca <- prcomp(t(RMA_values), scale=T)
 png("PCA_normalized.png")
 s3d <- scatterplot3d(pca$x[,1:3], pch=19, color=rainbow(nrow(adf)))
@@ -89,7 +91,8 @@ dev.off()
 
 # Convert normalized expression values from log2 and check
 RMA_values10 <- 2**RMA_values
-print(RMA_values[1:20,], RMA_values10[1:20,])
+print(RMA_values[1:20,])
+print(RMA_values10[1:20,])
 
 # Rename samples in eset
 sampleNames(eset) <- rownames(pData(adf))
@@ -109,17 +112,15 @@ tmp[tmp=="NA"] <- NA
 fData(eset) <- tmp
 
 # Check order of Sample Name and Probe IDs
-mysamples <- sampleNames(eset)
-probesets <- probeNames(GSE49448)
-mysamples
-probesets[1:10]
+print(sampleNames(eset))
+print(probeNames(allsamples)[1:10])
 # Build FC table
-CPC.mean <- apply(RMA_values10[, c("CPC.1","CPC.2","CPC.3")], 1, mean)
-CTL.mean <- apply(RMA_values10[, c("Ctl.1","Ctl.2","Ctl.3")], 1, mean)
-CPC_CTL_FC <- CPC.mean/CTL.mean
-FC_GSE49448 <- cbind(Symbol, Name, CPC.mean, CTL.mean, CPC_CTL_FC)
-colnames(FC_GSE49448)
-write.table(FC_GSE49448, file="FC_GSE49448.txt", 
+treated_mean <- apply(RMA_values10[, c("CPC.1","CPC.2","CPC.3")], 1, mean)
+control_mean <- apply(RMA_values10[, c("Ctl.1","Ctl.2","Ctl.3")], 1, mean)
+fc_mean <- treated_mean/control_mean
+foldchange <- cbind(Symbol, Name, treated_mean, control_mean, fc_mean)
+colnames(foldchange)
+write.table(foldchange, file="foldchange.txt", 
 	quote=F, sep="\t", col.names=NA)
 
 # Construct design matrix, response~model
@@ -147,8 +148,9 @@ limma_df <- as.data.frame(limmaresults)
 png("volcano_DEgenes_padj.png", width=1000, height=800)
 EnhancedVolcano(
 	limma_df, x="logFC", y="adj.P.Val", lab=limma_df$Symbol, 
-	title="GSE49448: CPC versus Control", subtitle="Limma results", 
-	labSize=6.0, pointSize=1.0, pCutoff=0.001, FCcutoff=4, 
+	title=paste(GSE,":CPC versus Control"), subtitle="Limma results", 
+	labSize=6.0, pointSize=1.0, 
+	pCutoff=0.001, FCcutoff=4, 
 	legendPosition='right', legendLabSize=12, legendIconSize=4.0, 
 	xlab=bquote(~Log[2]~ 'fold change'), ylab=bquote(~Log[10]~ 'adj.P.val'), 
 	ylim=c(0,-log10(0.00001))
@@ -205,7 +207,7 @@ cm_annotate <- data.frame("Direction"=camera_results$Direction)
 rownames(cm_annotate) <- rownames(cm_matrix)
 png("heatmap_camera.png", height=1000, width=800)
 pheatmap(as.matrix(cm_matrix), 
-	main="GSE49448: CAMERA Enriched Genes in CPC group over control",
+	main=paste(GSE,":CAMERA Enriched Genes in CPC group over control"),
 	cluster_cols=F, annotation_row=cm_annotate, 
 	cutree_rows=4, fontsize=10)
 dev.off()
@@ -225,7 +227,7 @@ write.table(romer_results, "func.enrichment_romer.txt", sep="\t")
 #save.image("~/FGT/ICA1/workspace.RData")
 
 # Generate data for Shiny app
-library("dplyr")
+library(dplyr)
 shiny_merged <- left_join(
 	limmaresults[1:50,], 
 	cbind(ID, RMA_values10), 
