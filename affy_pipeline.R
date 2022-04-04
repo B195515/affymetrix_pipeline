@@ -134,14 +134,15 @@ contrastmatrix <- makeContrasts(CPC-CTL, levels=design)
 # Fit the model lmFit(response, model)
 fit <- lmFit(eset,design)
 # Do contrasts w/borrowed variance to moderate the t-stats
-fit2 <- eBayes(contrasts.fit(fit, contrastmatrix))
+fit2 <- eBayes(contrasts.fit(fit, contrastmatrix))li
 
 # Top DEGs as specified in contrastmatrix
 # 'coef' is contrastmatrix column
 # 'fdr' is FDR statistical adjustment
 # 'number' is maximum number of genes to list
+
 limmaresults <- topTable(fit2, coef=1, adjust="fdr", number=nrow(eset))
-write.table(limmaresults, "limmaresults.txt", sep="\t")
+write.table(limmaresults, "limmaresults.csv", sep=",", col.names=NA, row.names=TRUE)
 
 # Volcano plot of DEGs with cutoffs
 limma_df <- as.data.frame(limmaresults)
@@ -241,3 +242,9 @@ save(expression, file="expression.Rdata")
 experiment <- read.table("targets.txt", header=T, as.is=T, row.names=1)
 save(experiment, file="experiment.Rdata")
 
+# Generate data for volcano plot shiny
+limma_transformed <- limmaresults[,c("Symbol","logFC","P.Value","adj.P.Val","B")]
+limma_transformed$minus_log10_Pval <- -log10(limmaresults$adj.P.Val)
+limma_transformed$sig <- as.factor(
+	abs(limma_transformed$logFC) > 2 & limma_transformed$adj.P.Val < 0.01)
+write.table(limma_transformed, "limma_transformed.csv", sep=",", col.names=NA, row.names=TRUE)
