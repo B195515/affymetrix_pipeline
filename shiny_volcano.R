@@ -42,7 +42,7 @@ ui <- shinyUI(fluidPage(
                     downloadButton('download_plot', 'Download volcano plot as PDF'),
                     br(),
                     br(),
-                    # here the table for the clicked points:
+                    # clicked points table
                     tableOutput('clickedPoints')
                     ) # end mainPanel
                 ) # end sidebarLayout
@@ -72,46 +72,42 @@ ui <- shinyUI(fluidPage(
 # Server--------------
 server <- function(input, output, session){
     
-    #read in the table as a function of the select input
+    # Read in data
     dataFrame <- reactive({
         read.table("limma_transformed.csv", header=T, sep=',')
         })
     
-    # use columns and thresholds selected in UI
+    # Subset by threshold
     is_de <- reactive ({
-        abs(dataFrame()[["logFC"]]) >= input$fc_thres & dataFrame()[["minus_log10_Pval"]] >= input$pval_thres
+        abs(dataFrame()[["logFC"]]) >= input$fc_thres & 
+            dataFrame()[["minus_log10_Pval"]] >= input$pval_thres
         })
     
+    # Factorize DE points
     de_vec <- reactive({
         factor(is_de(), levels=c("TRUE","FALSE"))
     })
     
-    # #plot it normally with ggplot:
-    # output$volcanoPlot <- renderPlot({ 
-    #     ggplot(dataFilter(),aes(x=logFC, y=minus_log10_Pval, color=sig)) +
-    #         geom_point() +
-    #         coord_cartesian() +
-    #         ylab("-log10(adj.P.Val)") +
-    #         xlab("log2 fold change")
-    # })
-    
+    # Make volcano plot
     reactive_plot <- reactive ({
-        ggplot(dataFrame(), 
-               aes(x=logFC, y=minus_log10_Pval)) +
+        ggplot(dataFrame(), aes(x=logFC, y=minus_log10_Pval)) +
         geom_point(alpha=.6, aes(color=de_vec())) +
         coord_cartesian() + 
-        geom_hline(yintercept=input$pval_thres, linetype="dashed", col="grey", size=1) +
-        geom_vline(xintercept=c(input$fc_thres, -input$fc_thres), linetype="dashed", col="grey", size=1) + 
+        geom_hline(yintercept=input$pval_thres, 
+                   linetype="dashed", col="grey", size=1) +
+        geom_vline(xintercept=c(input$fc_thres, -input$fc_thres), 
+                   linetype="dashed", col="grey", size=1) + 
         xlab("log2 fold change") +
-        ylab("-log10(adj.P.Val)") +
+        ylab("-log10(FDR)") +
         labs(color="Differentially expressed")
         })
-    
+
+    # Show volcano plot    
     output$volcanoPlot <- renderPlot ({
         reactive_plot()
         })
     
-    # get the clicked points
+    # Retrieve clicked points
     clicked <- reactive({
         # define the x and y variables:
         nearPoints(dataFrame(), 
@@ -124,12 +120,12 @@ server <- function(input, output, session){
         clicked()
         }, rownames=T)
     
-    # render df of input data in the Data tab
+    # Show all data in Data tab
     output$all_data <- renderDataTable(
         dataFrame()
         )
     
-    # for downloads
+    # Setup plot download
     output$download_volcano <- downloadHandler(
         filename = function() {
             paste0("volcano-plot-", Sys.Date(), ".pdf")
