@@ -1,5 +1,5 @@
 # Analysis of affymetrix expression data, Platform: MOE430v2
-# Script modified from original tutorial script from the Functional Genomic Technologies course 2022 by Simon Tomlinson
+# Script modified FGT course 2022 by Simon Tomlinson
 
 # Install packages to load and analyze data
 #if (!requireNamespace("BiocManager", quietly = TRUE))
@@ -7,19 +7,20 @@
 #BiocManager::install("affy")
 #BiocManager::install("limma")
 #install.packages("scatterplot3d", repo="http://cran.ma.imperial.ac.uk")
+#BiocManager::install('EnhancedVolcano')
 library(affy)
 library(limma)
 library(scatterplot3d)
 library(mouse4302.db) # chip
 library(annotate)
-BiocManager::install('EnhancedVolcano')
 library(EnhancedVolcano)
 library(pheatmap)
 
 GSE <- "GSE49448"
 
 # Load targets file as ADF object
-adf <- read.AnnotatedDataFrame("targets.txt", header=TRUE, row.names=1, as.is=TRUE)
+adf <- read.AnnotatedDataFrame("targets.txt", 
+	header=TRUE, row.names=1, as.is=TRUE)
 
 # Load CEL files listed in ADF
 allsamples <- ReadAffy(filenames=pData(adf)$Filename, phenoData=adf)
@@ -30,7 +31,7 @@ png("QC_histogram.png", width=1000, height=1000)
 hist(allsamples, 
 	main=paste(GSE,":Density plot of signal intensity"), 
 	col=pData(adf)$Color,
-	cex.main=2, cex.lab=2,cex.axis=2)
+	cex.main=2, cex.lab=2, cex.axis=2)
 dev.off()
 
 # Boxplot for quantile distribution
@@ -41,18 +42,19 @@ boxplot(allsamples, col=pData(adf)$Color,
 	xlab='Samples', ylab='Log Intensity')
 dev.off()
 
-# Confirm abs/pres calls, difference between groups vs sample quality
+# Confirm abs/pres calls
+# Distinguish biological vs quality differences
 calls <- exprs(mas5calls(allsamples))
 called <- data.frame(colSums(calls=='A'), colSums(calls=='P'))
 write.table(called, file="MAS5calls.txt", 
 	quote=F, sep="\t", col.names=NA)
 
-# RMA-normalization outputs log2-transformed values
+# RMA-norm outputs log2 values
 # eset holds normalized data
 eset <- rma(allsamples)
-# 'values' hold matrix of normalized expression values
+# Get matrix of normalized values
 RMA_values <- exprs(eset)
-# Boxplot of normalized values
+# Boxplot normalized values
 png("RMA_boxplot.png")
 boxplot(RMA_values, col=pData(adf)$Color, 
 	las=2, names=rownames(pData(adf)), 
@@ -62,7 +64,7 @@ dev.off()
 
 # Dependency of log-ratio & mean intensity level of variables
 # x-axis = mean intensity, y-axis = log-ratio
-# Exc])ept most points (genes) in MA ~0 as majority of genes don't change
+# Most points at 0 as majority of genes don't change
 png("MA_normalized_all.png", width=850, height=800)
 mva.pairs(RMA_values, 
 	main=paste(GSE,":MVA plot of CPC vs Control samples"), 
@@ -78,7 +80,7 @@ png("HC_pearsonavg_normalized.png")
 plot(HC)
 dev.off()
 
-# Determine dataset artificial feats explaining variability
+# Determine artificial feats explaining variability
 # Transpose values matrix and scale variables to have unit variance
 pca <- prcomp(t(RMA_values), scale=T)
 png("PCA_normalized.png")
@@ -114,7 +116,7 @@ fData(eset) <- tmp
 # Check order of Sample Name and Probe IDs
 print(sampleNames(eset))
 print(probeNames(allsamples)[1:10])
-# Build FC table
+# Build simple FC table
 treated_mean <- apply(RMA_values10[, c("CPC.1","CPC.2","CPC.3")], 1, mean)
 control_mean <- apply(RMA_values10[, c("Ctl.1","Ctl.2","Ctl.3")], 1, mean)
 fc_mean <- treated_mean/control_mean
@@ -123,6 +125,7 @@ colnames(foldchange)
 write.table(foldchange, file="foldchange.txt", 
 	quote=F, sep="\t", col.names=NA)
 
+#-------------LIMMA ANALYSIS
 # Construct design matrix, response~model
 # response: gene profiles
 # model: the formula used to predict the response
@@ -132,17 +135,19 @@ colnames(design) <- unique(pData(adf)$Group)
 # Specifies which comparisons are to be made between groups
 contrastmatrix <- makeContrasts(CPC-CTL, levels=design)
 # Fit the model lmFit(response, model)
-fit <- lmFit(eset,design)
+fit <- lmFit(eset, design)
 # Do contrasts w/borrowed variance to moderate the t-stats
-fit2 <- eBayes(contrasts.fit(fit, contrastmatrix))li
+fit2 <- eBayes(contrasts.fit(fit, contrastmatrix))
 
 # Top DEGs as specified in contrastmatrix
 # 'coef' is contrastmatrix column
 # 'fdr' is FDR statistical adjustment
 # 'number' is maximum number of genes to list
 
-limmaresults <- topTable(fit2, coef=1, adjust="fdr", number=nrow(eset))
-write.table(limmaresults, "limmaresults.csv", sep=",", col.names=NA, row.names=TRUE)
+limmaresults <- topTable(fit2, coef=1, 
+	adjust="fdr", number=nrow(eset))
+write.table(limmaresults, "limmaresults.csv", 
+	sep=",", col.names=NA, row.names=TRUE)
 
 # Volcano plot of DEGs with cutoffs
 limma_df <- as.data.frame(limmaresults)
@@ -164,6 +169,7 @@ png("vennDiagram_classified.png", width=1000, height=1000)
 vennDiagram(classify)
 dev.off()
 
+#-----------FUNCTIONAL ENRICHMENT ANALYSIS
 # Load molecular signature db
 Mm.H <- readRDS("Mm.h.all.v7.1.entrez.rds")
 
@@ -214,42 +220,42 @@ pheatmap(as.matrix(cm_matrix),
 dev.off()
 
 # Other methods
-mroast_results <- mroast(eset_t, index=H.indices, design=design,
-contrast=contrastmatrix[,1], adjust.method="BH")
-write.table(mroast_results, "func.enrichment_mroast.txt", sep="\t")
-#
-romer_results <- romer(eset_t, index=H.indices, design=design,
-contrast=contrastmatrix[,1])
-write.table(romer_results, "func.enrichment_romer.txt", sep="\t")
+# mroast_results <- mroast(eset_t, index=H.indices, design=design,
+# contrast=contrastmatrix[,1], adjust.method="BH")
+# write.table(mroast_results, "func.enrichment_mroast.txt", sep="\t")
+# romer_results <- romer(eset_t, index=H.indices, design=design,
+# contrast=contrastmatrix[,1])
+# write.table(romer_results, "func.enrichment_romer.txt", sep="\t")
 
-# Optional: Extract the model from the fit if using the same one in both the differential gene analysis and the enrichment analysis
+# Optional: Extract the model from the fit if using the same one 
+# in both the DEG analysis and the enrichment analysis
 #sv <- squeezeVar(fit$sigma^2, df=fit$df.residual)
 
 #save.image("~/FGT/ICA1/workspace.RData")
 
-# Generate data for Shiny app
+#---------------SHINY DATA
+# Top 50 DEGs by Limma
 library(dplyr)
-shiny_merged <- left_join(
+expression <- left_join(
 	limmaresults[1:50,], 
 	cbind(ID, RMA_values10), 
 	by="ID", keep=TRUE, copy=TRUE)
-rownames(shiny_merged) <- with(shiny_merged, paste(Symbol, ID.x, sep=" / "))
+rownames(expression) <- with(expression, paste(Symbol, ID.x, sep=" / "))
 # Select only cols with sample names, convert to num
-expression <- shiny_merged[,(ncol(shiny_merged)-6+1):ncol(shiny_merged)]
+expression <- expression[,(ncol(expression)-6+1):ncol(expression)]
 expression[] <- lapply(expression, as.numeric)
 save(expression, file="expression.Rdata")
+
 # Read targets file as a DF
-experiment <- read.table("targets.txt", header=T, as.is=T, row.names=1)
+experiment <- read.table("targets.txt", 
+	header=T, as.is=T, row.names=1)
 save(experiment, file="experiment.Rdata")
 
-# Generate data for volcano plot shiny (as csv)
-limma_transformed <- limmaresults[,c("Symbol","logFC","P.Value","adj.P.Val","B")]
-limma_transformed$minus_log10_Pval <- -log10(limmaresults$adj.P.Val)
-limma_transformed$sig <- as.factor(
-	abs(limma_transformed$logFC) > 2 & limma_transformed$adj.P.Val < 0.01)
-write.table(limma_transformed, "limma_transformed.csv", sep=",", col.names=NA, row.names=TRUE)
-
-# Generate data for volcano plot shiny (as RData)
+# Volcano plot (-log10(FDR) vs log2FC) (csv, RData)
 differential <- limmaresults[, c("Symbol","logFC","P.Value","adj.P.Val","B")]
 differential$minus_log10_Pval <- -log10(limmaresults$adj.P.Val)
+#differential$sig <- as.factor(
+#	abs(differential$logFC) > 2 & differential$adj.P.Val < 0.01)
+write.table(differential, "differential.csv", 
+	sep=",", col.names=NA, row.names=TRUE)
 save(differential, file="differential.Rdata")
