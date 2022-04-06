@@ -242,9 +242,14 @@ save(expression, file="expression.Rdata")
 experiment <- read.table("targets.txt", header=T, as.is=T, row.names=1)
 save(experiment, file="experiment.Rdata")
 
-# Generate data for volcano plot shiny
+# Generate data for volcano plot shiny (as csv)
 limma_transformed <- limmaresults[,c("Symbol","logFC","P.Value","adj.P.Val","B")]
 limma_transformed$minus_log10_Pval <- -log10(limmaresults$adj.P.Val)
 limma_transformed$sig <- as.factor(
 	abs(limma_transformed$logFC) > 2 & limma_transformed$adj.P.Val < 0.01)
 write.table(limma_transformed, "limma_transformed.csv", sep=",", col.names=NA, row.names=TRUE)
+
+# Generate data for volcano plot shiny (as RData)
+differential <- limmaresults[, c("Symbol","logFC","P.Value","adj.P.Val","B")]
+differential$minus_log10_Pval <- -log10(limmaresults$adj.P.Val)
+save(differential, file="differential.Rdata")
