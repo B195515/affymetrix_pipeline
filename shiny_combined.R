@@ -200,7 +200,8 @@ server <- function(input, output, session){
     
     # Make volcano plot
     reactive_plot <- reactive ({
-        ggplot(differential, aes(x=logFC, y=minus_log10_Pval)) +
+        ggplot(differential, aes(x=.data[[fc_col]], y=.data[[pval_col]])
+               ) +
             geom_point(alpha=.6, aes(color=de_vec())) +
             coord_cartesian() + 
             geom_hline(yintercept=input$pval_thres, 
@@ -221,10 +222,8 @@ server <- function(input, output, session){
     # Retrieve clicked points
     clicked <- reactive({
         # define the x and y variables:
-        nearPoints(differential, 
-                   input$plot_click, 
-                   xvar=fc_col, 
-                   yvar=pval_col)
+        nearPoints(differential, input$plot_click, 
+                   xvar=fc_col, yvar=pval_col)
     })
     
     output$clickedPoints <- renderTable({
@@ -234,8 +233,9 @@ server <- function(input, output, session){
     # Show hovered point
     hovered <- reactive({
         hover <- input$plot_hover
-        point <- nearPoints(differential, hover, threshold=10,
-                            maxpoints=1, addDist=FALSE)
+        point <- nearPoints(differential, hover, 
+                            xvar=fc_col, yvar=pval_col,
+                            threshold=10, maxpoints=1, addDist=FALSE)
         if (nrow(point)==0) return(NULL)
         
         left_pct <- (hover$x-hover$domain$left) / (hover$domain$right-hover$domain$left)
