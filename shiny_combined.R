@@ -11,19 +11,16 @@
 # Heatmap plot code modified from class code provided 
 # in FGT 2022 by Simon Tomlinson
 ######################
-
 library(shiny)
 library(ggplot2)
 library(DT)
 library(pheatmap)
 library(Cairo)
 library(shinyjs)
-
 # Load data
 load("differential.Rdata")
 load("experiment.Rdata")
 load("expression.Rdata")
-
 # Change file/var names here
 GSEnumber <- "GSE49448"
 pval_col <- "minus_log10_Pval"
@@ -33,7 +30,6 @@ fdr_col <- "adj.P.Val"
 
 # UI------------------
 ui <- shinyUI(fluidPage(
-    
     tabsetPanel(
         
         tabPanel(
@@ -43,21 +39,28 @@ ui <- shinyUI(fluidPage(
             sidebarLayout(
                 sidebarPanel(
                     width=3,
+                    h3("Volcano Plot"),
+                    "Differentially-expressed genes as output from \"lmfit\"
+                    function.",
+                    br(),br(),
+                    "Hover over a point to show gene symbol, log2 fold change value,
+                    and FDR-adjusted p-value.",
+                    br(),br(),
+                    "Click anywhere on the plot to show a list of genes in the
+                    proximity.",
                     
+                    h3("Thresholds"),
                     sliderInput("pval_thres",
                                 "Set significance threshold",
                                 min=0, max=4, value=2.5, step=0.1),
-                    
                     textOutput("selected_pval"),
                     br(),
-                    
                     sliderInput("fc_thres",
                                 "Set FC threshold",
                                 min=-8, max=8, value=4, step=0.1),
                     
-                    downloadButton('download_plot', 'Download plot')
-                    
-                ), # end sidebarPanel
+                    h3("Downloads"),
+                    downloadButton('download_plot', 'Download plot')),
                 
                 mainPanel(
                     plotOutput('volcanoPlot',
@@ -67,14 +70,10 @@ ui <- shinyUI(fluidPage(
                                brush='plot_brush',
                                hover=hoverOpts('plot_hover',
                                                delay=10, delayType="debounce")),
-                    
                     uiOutput('hover_info'),
-                    
-                    # clicked points table
-                    tableOutput('clickedPoints')
-                ) # end mainPanel
-            ) # end sidebarLayout
-        ), # end Plot panel
+                    tableOutput('clickedPoints')) # clicked points table)
+                )
+            ),
         
         tabPanel(
             "Heatmap",
@@ -84,56 +83,61 @@ ui <- shinyUI(fluidPage(
                 sidebarPanel(
                     width=3,
                     
+                    h3("Heatmap"),
+                    "Heatmap of RMA-normalized expression data for all samples,
+                    for the top 50 DEGs as ranked by Limma.",
+                    
+                    h3("Settings"),
                     sliderInput("font_row",
                                 "Font size row:",
                                 min=6, max=14, value=10),
-                    
                     sliderInput("font_col",
                                 "Font size col:",
                                 min=6, max=14, value=10),
-                    
                     # Select annotation
                     selectInput("select", 
                                 "Select annotation", 
                                 choices=c("none",colnames(experiment)), 
                                 selected="Group", multiple=T, selectize=TRUE),
-                    
                     checkboxInput("srownames", "Show Row Names", TRUE),
-                    
                     checkboxInput("logtansform", "Log transform values", FALSE),
-                    
                     radioButtons("norm", "Scale by", 
                                  choices=c("none", "row", "column")),
                     
-                    downloadButton('download_hm', 'Download heatmap')
-                ), # end sidebarPanel
+                    h3("Downloads"),
+                    downloadButton('download_hm', 'Download heatmap')),
                 
                 mainPanel(
-                    plotOutput("distPlot", 
-                               height="800",
-                               width="80%")
-                ) # end mainPanel
-            ) # end sidebarlayout
-        ), # end panel
+                    plotOutput("distPlot", height="800", width="80%"))
+            )
+        ),
         
         tabPanel(
             "Limma data",
-            h1("About the data"),
+            h1("Limma differentially expressed genes (ranked)"),
             
             sidebarLayout(
                 sidebarPanel(
                     width=3,
                     
-                    h4("say something here"),
+                    h3("Data legend"),
+                    "Data table shows the gene symbol, log2 fold change, 
+                    p-value, FDR-adjusted p-value, B score (B-statistics), 
+                    and -log10(adj.p.value).",
+                    br(),br(),
+                    "Rownames are the probe ids from the 
+                    MOE430v2 microarray chips.",
                     
-                    downloadButton('download_limma', 'Download .csv file')
-                ), # end sidebarPanel
+                    h3("External links"),
+                    uiOutput("links1"),
+                    
+                    h3("Downloads"),
+                    downloadButton('download_limma', 'Download .csv file')),
                 
                 mainPanel(
-                    dataTableOutput("limma_data")
-                ) # end mainPanel
-            ) # end sidebarLayout
-        ), # end Data panel
+                    dataTableOutput("limma_data"))
+            )
+        ),
         
         tabPanel(
             "Expression data",
@@ -142,45 +146,50 @@ ui <- shinyUI(fluidPage(
             sidebarLayout(
                 sidebarPanel(
                     width=3,
-                    
-                    h4("say something here"),
-                    
-                    downloadButton('download_exp', 'Download .csv file')
-                ), # end sidebarPanel
+                    h3("Data legend"),
+                    "Data table shows the RMA-normalized expression of the
+                    top 50 DEGs output from Limma model, for all array samples.",
+                    br(),br(),
+                    "Rownames show gene symbol and 
+                    corresponding chip array probe ID,",
+                    h3("Downloads"),
+                    downloadButton('download_exp', 'Download .csv file')),
                 
                 mainPanel(
-                    dataTableOutput("exp_data")
-                ) # end mainPanel
-            ) # end sidebarLayout
-        ), # end Data panel
+                    dataTableOutput("exp_data"))
+            )
+        ),
         
         tabPanel(
             "Experiment",
             h1("Experiment details"),
-            
             sidebarLayout(
                 sidebarPanel(
                     width=3,
-                    
-                    h4("say something here"),
-                    
-                    downloadButton('download_targets', 'Download .csv file')
-                ), # end sidebarPanel
-                
+                    h3("About data",GSEnumber),
+                    "Mouse single cardiomyocytes (Ctl) and their derived 
+                    single CPCs were captured using microfluidic deviced and 
+                    cDNA synthesized and amplified and labelled using 
+                    NuGENE kits, and regular Affymetrix hybridization and 
+                    wash protocols were used to process the 
+                    mouse whole-genome array GeneChip 430 2.0.",
+                    h4("Citation"),
+                    "PMID: 31231540",
+                    h3("Downloads"),
+                    downloadButton('download_targets', 'Download .csv file')),
                 mainPanel(
-                    dataTableOutput("targets")
-                ) # end mainPanel
-            ) # end sidebarLayout
-        ) # end tabPanel
-    ) # end tabsetPanel
-) # end fluidPage
+                    h3("Transcriptomic Signatures of Mouse Cardiomyocyte 
+                       Dedifferentiation In vitro (Affymetrix)"),
+                    br(),br(),
+                    dataTableOutput("targets"))
+            )
+        )
+    ))
 ) # end UI
 
 
 # Server--------------
 server <- function(input, output, session){
-    
-    
     #------SERVER for volcano---------
     # Show actual p-value
     output$selected_pval <- renderText({
@@ -252,8 +261,7 @@ server <- function(input, output, session){
                   p(HTML(paste0("<b>Name: </b>", point[gene_col], "<br/>",
                                 "<b>FC: </b>", round(point[fc_col],2), "<br/>",
                                 "<b>Sig: </b>", round(point[fdr_col],5), "<br/>",
-                                NULL)
-                        )
+                                NULL))
                     )
                 )
     })
@@ -262,13 +270,11 @@ server <- function(input, output, session){
         hovered()
     })
     
-    
     #------SERVER for heatmap-------------
     # Store plot in fx for multiple calls
     heatplot <- function(){
         if(input$logtansform){
-            expression <- log2(expression + 1)
-        }
+            expression <- log2(expression + 1)}
         
         if(is.null(input$select)){
             mysel<-NULL
@@ -293,25 +299,31 @@ server <- function(input, output, session){
     }
     
     output$distPlot <- renderPlot({
-        heatplot()
-    }, alt="Heatmap of top 50 expressed genes", execOnResize = F)
-    
-    
+        heatplot()}, 
+        alt="Heatmap of top 50 expressed genes", 
+        execOnResize = F)
     
     #------SHOW ALL DATA-------------------
+    bstats <- a("More about B-statistics", 
+                href="https://support.bioconductor.org/p/6124/",
+                target="_blank")
+    chip_ds <- a("Other MOE430v2 datasets", 
+                 href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GPL1261",
+                 target="_blank")
+    chip_support <- a("Info and chip support", 
+                      href="https://www.thermofisher.com/order/catalog/product/900497",
+                      target="_blank")
+    output$links1 <- renderUI({
+        tagList(bstats, br(), br(), 
+                chip_ds, br(), br(),
+                chip_support)})
+    
     output$limma_data <- renderDataTable(differential)
     output$exp_data <- renderDataTable(expression)
     output$targets <- renderDataTable(experiment)
     
     
-    
     #------DOWNLOADS----------------------
-    # output$download_volcano <- downloadHandler(
-    #     filename = function(){
-    #         paste0("volcano-plot-",GSEnumber,".png")},
-    #     content = function(file){
-    #         ggsave(file=reactive_plot(), filename=file)}
-    #     )
     output$download_plot <- downloadHandler(
         filename <- function() {
             paste("Volcano-plot_",GSEnumber,".pdf", sep="")},
@@ -321,7 +333,6 @@ server <- function(input, output, session){
             dev.off()},
         contentType = "application/pdf"
     )
-    
     
     # TODO: debug
     # output$download_hm <- downloadHandler(
@@ -334,7 +345,6 @@ server <- function(input, output, session){
     #     contentType = "application/pdf"
     # )
     
-    
     output$download_limma <- downloadHandler(
         filename = function(){
             paste0("limmaDE_",GSEnumber,".csv")},
@@ -342,14 +352,12 @@ server <- function(input, output, session){
             write.csv(differential, file)}
     )
     
-    
     output$download_exp <- downloadHandler(
         filename = function(){
             paste0("expressionTop50_",GSEnumber,".csv")},
         content = function(file){
             write.csv(expression, file)}
     )
-    
     
     output$download_targets <- downloadHandler(
         filename = function(){
