@@ -6,6 +6,7 @@
 # Volcano plot code modified from:
 # https://github.com/FredHutch/interactiveVolcano
 # https://2-bitbio.com/2017/12/clickable-volcano-plots-in-shiny.html
+# Hovered points from: https://github.com/JoachimGoedhart/VolcaNoseR
 ######################
 # Heatmap plot code modified from class code provided 
 # in FGT 2022 by Simon Tomlinson
@@ -27,6 +28,8 @@ load("expression.Rdata")
 GSEnumber <- "GSE49448"
 pval_col <- "minus_log10_Pval"
 fc_col <- "logFC"
+gene_col <- "Symbol"
+fdr_col <- "adj.P.Val"
 
 # UI------------------
 ui <- shinyUI(fluidPage(
@@ -43,35 +46,40 @@ ui <- shinyUI(fluidPage(
                     
                     sliderInput("pval_thres",
                                 "Set significance threshold",
-                                min=0, max=5, value=3, step=0.1),
+                                min=0, max=4, value=2.5, step=0.1),
+                    
+                    textOutput("selected_pval"),
+                    br(),
                     
                     sliderInput("fc_thres",
                                 "Set FC threshold",
                                 min=-8, max=8, value=4, step=0.1),
                     
                     downloadButton('download_plot', 'Download plot')
-
-                    ), # end sidebarPanel
-            
+                    
+                ), # end sidebarPanel
+                
                 mainPanel(
                     plotOutput('volcanoPlot',
                                width="100%",
                                height="600px",
                                click='plot_click',
                                brush='plot_brush',
-                               hover='plot_hover'
-                       ),
+                               hover=hoverOpts('plot_hover',
+                                               delay=10, delayType="debounce")),
+                    
+                    uiOutput('hover_info'),
                     
                     # clicked points table
                     tableOutput('clickedPoints')
-                    ) # end mainPanel
-                ) # end sidebarLayout
-            ), # end Plot panel
+                ) # end mainPanel
+            ) # end sidebarLayout
+        ), # end Plot panel
         
         tabPanel(
             "Heatmap",
             h1("GSE49448: Expression heatmap of Top 50 DEGs"),
-
+            
             sidebarLayout(
                 sidebarPanel(
                     width=3,
@@ -83,7 +91,7 @@ ui <- shinyUI(fluidPage(
                     sliderInput("font_col",
                                 "Font size col:",
                                 min=6, max=14, value=10),
-
+                    
                     # Select annotation
                     selectInput("select", 
                                 "Select annotation", 
@@ -95,38 +103,38 @@ ui <- shinyUI(fluidPage(
                     checkboxInput("logtansform", "Log transform values", FALSE),
                     
                     radioButtons("norm", "Scale by", 
-                                choices=c("none", "row", "column")),
+                                 choices=c("none", "row", "column")),
                     
                     downloadButton('download_hm', 'Download heatmap')
-                    ), # end sidebarPanel
+                ), # end sidebarPanel
                 
                 mainPanel(
                     plotOutput("distPlot", 
                                height="800",
                                width="80%")
-                    ) # end mainPanel
-                ) # end sidebarlayout
-            ), # end panel
+                ) # end mainPanel
+            ) # end sidebarlayout
+        ), # end panel
         
         tabPanel(
             "Limma data",
             h1("About the data"),
-             
+            
             sidebarLayout(
                 sidebarPanel(
                     width=3,
-
+                    
                     h4("say something here"),
-
+                    
                     downloadButton('download_limma', 'Download .csv file')
-                    ), # end sidebarPanel
-                 
+                ), # end sidebarPanel
+                
                 mainPanel(
                     dataTableOutput("limma_data")
-                    ) # end mainPanel
-                ) # end sidebarLayout
-            ), # end Data panel
-
+                ) # end mainPanel
+            ) # end sidebarLayout
+        ), # end Data panel
+        
         tabPanel(
             "Expression data",
             h1("About the data"),
@@ -134,17 +142,17 @@ ui <- shinyUI(fluidPage(
             sidebarLayout(
                 sidebarPanel(
                     width=3,
-
+                    
                     h4("say something here"),
-
+                    
                     downloadButton('download_exp', 'Download .csv file')
-                    ), # end sidebarPanel
+                ), # end sidebarPanel
                 
                 mainPanel(
                     dataTableOutput("exp_data")
-                    ) # end mainPanel
-                ) # end sidebarLayout
-            ), # end Data panel
+                ) # end mainPanel
+            ) # end sidebarLayout
+        ), # end Data panel
         
         tabPanel(
             "Experiment",
@@ -153,56 +161,62 @@ ui <- shinyUI(fluidPage(
             sidebarLayout(
                 sidebarPanel(
                     width=3,
-
+                    
                     h4("say something here"),
-
+                    
                     downloadButton('download_targets', 'Download .csv file')
-                    ), # end sidebarPanel
+                ), # end sidebarPanel
                 
                 mainPanel(
                     dataTableOutput("targets")
-                    ) # end mainPanel
-                ) # end sidebarLayout
-            ) # end tabPanel
-        ) # end tabsetPanel
-    ) # end fluidPage
+                ) # end mainPanel
+            ) # end sidebarLayout
+        ) # end tabPanel
+    ) # end tabsetPanel
+) # end fluidPage
 ) # end UI
 
 
 # Server--------------
 server <- function(input, output, session){
-
+    
     
     #------SERVER for volcano---------
+    # Show actual p-value
+    output$selected_pval <- renderText({
+        paste("adj.P.Val =", format(10**(-input$pval_thres), digits=5))
+    })
+    
     # Subset by threshold
     is_de <- reactive ({
         abs(differential[[fc_col]]) >= input$fc_thres & 
             differential[[pval_col]] >= input$pval_thres
-        })
+    })
     
     # Factorize DE points
     de_vec <- reactive({
         factor(is_de(), levels=c("TRUE", "FALSE"))
-        })
+    })
     
     # Make volcano plot
     reactive_plot <- reactive ({
         ggplot(differential, aes(x=logFC, y=minus_log10_Pval)) +
-        geom_point(alpha=.6, aes(color=de_vec())) +
-        coord_cartesian() + 
-        geom_hline(yintercept=input$pval_thres, 
-                   linetype="dashed", col="grey", size=1) +
-        geom_vline(xintercept=c(input$fc_thres, -input$fc_thres), 
-                   linetype="dashed", col="grey", size=1) + 
-        xlab("log2 fold change") +
-        ylab("-log10(FDR)") +
-        labs(color="Differentially expressed")
-        })
-
+            geom_point(alpha=.6, aes(color=de_vec())) +
+            coord_cartesian() + 
+            geom_hline(yintercept=input$pval_thres, 
+                       linetype="dashed", col="grey", size=1) +
+            geom_vline(xintercept=c(input$fc_thres, -input$fc_thres), 
+                       linetype="dashed", col="grey", size=1) + 
+            xlab("log2 fold change") +
+            ylab("-log10(FDR)") +
+            labs(color="Differentially expressed") +
+            theme(legend.position="bottom")
+    })
+    
     # Show volcano plot    
-    output$volcanoPlot <- renderPlot ({
+    output$volcanoPlot <- renderPlot({
         reactive_plot()
-        })
+    })
     
     # Retrieve clicked points
     clicked <- reactive({
@@ -211,12 +225,42 @@ server <- function(input, output, session){
                    input$plot_click, 
                    xvar=fc_col, 
                    yvar=pval_col)
-        })
+    })
     
     output$clickedPoints <- renderTable({
         clicked()
-        }, rownames=T)
+    }, rownames=T)
     
+    # Show hovered point
+    hovered <- reactive({
+        hover <- input$plot_hover
+        point <- nearPoints(differential, hover, threshold=10,
+                            maxpoints=1, addDist=FALSE)
+        if (nrow(point)==0) return(NULL)
+        
+        left_pct <- (hover$x-hover$domain$left) / (hover$domain$right-hover$domain$left)
+        top_pct <- (hover$domain$top-hover$y) / (hover$domain$top-hover$domain$bottom)
+        
+        left_px <- hover$range$left+left_pct * (hover$range$right-hover$range$left)
+        top_px <- hover$range$top+top_pct * (hover$range$bottom-hover$range$top)
+        
+        style <- paste0("position:absolute; padding: 5px; z-index:100; 
+                        background-color: rgba(200,200,245,0.65); ",
+                        "left:", left_px+20, "px; top:", top_px+32, "px;")
+        
+        wellPanel(style=style,
+                  p(HTML(paste0("<b>Name: </b>", point[gene_col], "<br/>",
+                                "<b>FC: </b>", round(point[fc_col],2), "<br/>",
+                                "<b>Sig: </b>", round(point[fdr_col],5), "<br/>",
+                                NULL)
+                        )
+                    )
+                )
+    })
+    
+    output$hover_info <- renderUI({
+        hovered()
+    })
     
     
     #------SERVER for heatmap-------------
@@ -246,11 +290,11 @@ server <- function(input, output, session){
                  show_rownames = input$srownames,
                  scale = input$norm,
                  annotation_col = mysel)
-        }
+    }
     
     output$distPlot <- renderPlot({
         heatplot()
-        }, alt="Heatmap of top 50 expressed genes", execOnResize = F)
+    }, alt="Heatmap of top 50 expressed genes", execOnResize = F)
     
     
     
@@ -276,7 +320,7 @@ server <- function(input, output, session){
             plot(reactive_plot())
             dev.off()},
         contentType = "application/pdf"
-        )
+    )
     
     
     # TODO: debug
@@ -296,7 +340,7 @@ server <- function(input, output, session){
             paste0("limmaDE_",GSEnumber,".csv")},
         content = function(file){
             write.csv(differential, file)}
-        )
+    )
     
     
     output$download_exp <- downloadHandler(
@@ -304,7 +348,7 @@ server <- function(input, output, session){
             paste0("expressionTop50_",GSEnumber,".csv")},
         content = function(file){
             write.csv(expression, file)}
-        )
+    )
     
     
     output$download_targets <- downloadHandler(
@@ -312,8 +356,8 @@ server <- function(input, output, session){
             paste0("targets_",GSEnumber,".csv")},
         content = function(file){
             write.csv(experiment, file)}
-        )
-        
+    )
+    
 } # close server
 
 # Run the application 
