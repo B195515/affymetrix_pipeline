@@ -106,7 +106,6 @@ eset@annotation
 ID <- featureNames(eset)
 Symbol <- getSYMBOL(ID, "mouse4302.db")
 Name <- as.character(lookUp(ID, "mouse4302.db", "GENENAME"))
-
 # Build annotation table, fix padding with 'NA' characters
 tmp <- data.frame(ID=ID, Symbol=Symbol, Name=Name, stringsAsFactors=F)
 tmp[tmp=="NA"] <- NA
@@ -150,17 +149,18 @@ write.table(limmaresults, "limmaresults.csv",
 	sep=",", col.names=NA, row.names=TRUE)
 
 # Volcano plot of DEGs with cutoffs
-limma_df <- as.data.frame(limmaresults)
 png("volcano_DEgenes_padj.png", width=1000, height=800)
 EnhancedVolcano(
-	limma_df, x="logFC", y="adj.P.Val", lab=limma_df$Symbol, 
-	title=paste(GSE,":CPC versus Control"), subtitle="Limma results", 
+	limmaresults, x="logFC", y="adj.P.Val", 
+	lab=limmaresults$Symbol, 
+	title=paste(GSE,":CPC versus Control"), 
+	subtitle="Limma results", 
 	labSize=6.0, pointSize=1.0, 
 	pCutoff=0.001, FCcutoff=4, 
 	legendPosition='right', legendLabSize=12, legendIconSize=4.0, 
-	xlab=bquote(~Log[2]~ 'fold change'), ylab=bquote(~Log[10]~ 'adj.P.val'), 
-	ylim=c(0,-log10(0.00001))
-	)
+	xlab=bquote(~Log[2]~ 'fold change'), 
+	ylab=bquote(~Log[10]~ 'adj.P.val'), 
+	ylim=c(0,-log10(0.00001)))
 dev.off()
 
 # Overlapping DEGs between groups
