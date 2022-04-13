@@ -26,19 +26,18 @@ allsamples <- ReadAffy(filenames=pData(adf)$Filename, phenoData=adf)
 
 # QC plots of raw data
 # Density plot
-png("images/QC_histogram.png", width=1000, height=1000)
-line <- par(lwd=2)
+png("images/QC_histogram.png", width=600, height=600)
 hist(allsamples, 
 	main=paste0(GSE,": Density plot of signal intensity"), 
-	col=pData(adf)$Color, cex.main=2, cex.lab=2, cex.axis=2)
+	col=pData(adf)$Color, cex=2, lwd=3)
 dev.off()
 
 # Boxplot for quantile distribution
-png("images/QC_boxplot.png", width=1000, height=1000)
+png("images/QC_boxplot.png", width=600, height=600)
 boxplot(allsamples, 
 	col=pData(adf)$Color, las=2, names=rownames(pData(adf)), 
 	main=paste0(GSE,": Boxplot of signal intensity"), 
-	xlab='Samples', ylab='Log Intensity')
+	xlab='Samples', ylab='Log Intensity', cex=2)
 dev.off()
 
 # Confirm abs/pres calls
@@ -55,17 +54,17 @@ eset <- rma(allsamples)
 RMA_values <- exprs(eset)
 colnames(RMA_values) <- rownames(pData(adf))
 # Boxplot normalized values
-png("images/RMA_boxplot.png")
+png("images/RMA_boxplot.png", width=600, height=600)
 boxplot(RMA_values, 
 	col=pData(adf)$Color, las=2, names=rownames(pData(adf)), 
 	main=paste(GSE,":Boxplot of normalized expression values"),
-	xlab='Samples', ylab='Log Intensity')
+	xlab='Samples', ylab='Log Intensity', cex=2)
 dev.off()
 
 # Dependency of log-ratio & mean intensity level of variables
 # x-axis = mean intensity, y-axis = log-ratio
 # Most points at 0 as majority of genes don't change
-png("images/MA_normalized_all.png", width=850, height=800)
+png("images/MA_normalized_all.png", width=900, height=800)
 mva.pairs(RMA_values, 
 	main=paste(GSE,":MVA plot of CPC vs Control samples"), 
 	ylim=c(-1.5,1.5))
@@ -74,14 +73,14 @@ dev.off()
 # Features relationship by hierarchical clustering
 # Pearson's corr coeff for HC with average linkage
 HC <- hclust(as.dist(1-cor(RMA_values, method="pearson")), method="average")
-png("images/HC_pearsonavg_normalized.png")
+png("images/HC_pearsonavg_normalized.png", width=600, height=600)
 plot(HC)
 dev.off()
 
 # Determine artificial feats explaining variability
 # Transpose values matrix and scale variables to have unit variance
 pca <- prcomp(t(RMA_values), scale=T)
-png("images/PCA_normalized.png")
+png("images/PCA_normalized.png", width=600, height=600)
 s3d <- scatterplot3d(pca$x[,1:3], pch=19, color=rainbow(nrow(adf)))
 s3d.coords <- s3d$xyz.convert(pca$x[,1:3])
 text(s3d.coords$x, s3d.coords$y, 
@@ -166,8 +165,10 @@ EnhancedVolcano(
 dev.off()
 
 # Overlapping DEGs between groups
-classify <- classifyTestsF(fit2)
-png("images/vennDiagram_classified.png", width=1000, height=1000)
+#classify <- classifyTestsF(fit2)
+classify <- decideTests(fit2)
+ded <- unname(colSums(classify!=0))
+png("images/vennDiagram_classified.png", width=600, height=600)
 vennDiagram(classify)
 dev.off()
 
@@ -175,16 +176,16 @@ dev.off()
 
 # Load molecular signature db
 Mm.H <- readRDS("Mm.h.all.v7.1.entrez.rds")
-# Filter log2 values of first 5000 DEGs from limma
+# Filter log2 values significant DEGs from decideTests
 # Convert Mm.H ID list into eset_t index
 # ids2indices(gene.sets, identifiers, remove.empty=TRUE)
 # CAMERA competitive test for Functional Enrichment
 # Reuse the design & contrast matrix
-RMA_values_filt <- RMA_values[rownames(limmaresults)[1:5000],]
-H.indices <- ids2indices(Mm.H, limmaresults[1:5000,]$ENTREZID)
+RMA_values_filt <- RMA_values[rownames(limmaresults)[1:ded],]
+H.indices <- ids2indices(Mm.H, limmaresults[1:ded,]$ENTREZID)
 camera_results <- camera(RMA_values_filt, index=H.indices,
 	design=design, contrast=contrastmatrix[,1],
-	weights=-log10(limmaresults[1:5000,"adj.P.Val"]))
+	weights=-log10(limmaresults[1:ded,"adj.P.Val"]))
 write.table(camera_results, "func.enrichment_camera.txt", sep="\t")
 
 # Heatmap of CAMERA results
@@ -192,7 +193,7 @@ cm_annotate <- data.frame("Direction"=camera_results$Direction)
 rownames(cm_annotate) <- rownames(camera_results)
 png("images/heatmap_camera.png", height=1000, width=800)
 pheatmap(as.matrix(camera_results[,c("PValue","FDR")]),
-	main=paste(GSE,":CAMERA Enriched Genes in CPC group over control"),
+	main=paste0(GSE,": CAMERA Enriched Genes in CPC group over control"),
 	cluster_cols=F, annotation_row=cm_annotate, 
 	cutree_rows=4, fontsize=10)
 dev.off()
@@ -205,12 +206,11 @@ cameraa$type <- "upregulated"
 cameraa$type[cameraa$Direction=="Down"] <- "downregulated"
 cameraa$term <- rownames(cameraa)
 png("images/barplot_camera.png", height=1000, width=800)
-p <- ggplot(cameraa, aes(x=NGenes/5000, y=fct_reorder(term, NGenes))) +
-	geom_point(aes(size=NGenes/5000, color=FDR)) +
+p <- ggplot(cameraa, aes(x=NGenes/ded, y=fct_reorder(term, NGenes))) +
+	geom_point(aes(size=NGenes/ded, color=FDR)) +
 	theme_bw(base_size=14) +
 	scale_colour_gradient(limits=c(0,1), low="red") +
-	ylab(NULL) +
-	xlab("Gene ratio")
+	ylab(NULL) + xlab("GeneRatio") + labs(size="GeneRatio") +
 	ggtitle(paste0(GSE,": CAMERA functional enrichment"))
 p + facet_grid(.~type)
 dev.off()
@@ -231,7 +231,7 @@ dev.off()
 
 # Top 50 DEGs by Limma
 library(dplyr)
-PROBEID <- data.frame(limmaresults$PROBEID])
+PROBEID <- data.frame(limmaresults$PROBEID)
 colnames(PROBEID) <- "PROBEID"
 expression <- left_join(
 	limmaresults[1:50,], 
