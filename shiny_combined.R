@@ -25,7 +25,7 @@ load("expression.Rdata")
 GSEnumber <- "GSE49448"
 pval_col <- "minus_log10_Pval"
 fc_col <- "logFC"
-gene_col <- "Symbol"
+gene_col <- "SYMBOL"
 fdr_col <- "adj.P.Val"
 
 # UI------------------
@@ -141,7 +141,7 @@ ui <- shinyUI(fluidPage(
         
         tabPanel(
             "Expression data",
-            h1("About the data"),
+            h1("Expression data"),
             
             sidebarLayout(
                 sidebarPanel(
@@ -151,7 +151,7 @@ ui <- shinyUI(fluidPage(
                     top 50 DEGs output from Limma model, for all array samples.",
                     br(),br(),
                     "Rownames show gene symbol and 
-                    corresponding chip array probe ID,",
+                    corresponding chip array probe ID.",
                     h3("Downloads"),
                     downloadButton('download_exp', 'Download .csv file')),
                 

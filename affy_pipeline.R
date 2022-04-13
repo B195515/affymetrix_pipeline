@@ -1,7 +1,7 @@
 # Analysis of affymetrix expression data, Platform: MOE430v2
-# Script modified FGT course 2022 by Simon Tomlinson
-
-# Install packages to load and analyze data
+# By student exam number B195515
+# Script modified from FGT course 2022 by Simon Tomlinson
+############
 #if (!requireNamespace("BiocManager", quietly = TRUE))
 #    install.packages("BiocManager")
 #BiocManager::install("affy")
@@ -21,24 +21,23 @@ GSE <- "GSE49448"
 # Load targets file as ADF object
 adf <- read.AnnotatedDataFrame("targets.txt", 
 	header=TRUE, row.names=1, as.is=TRUE)
-
 # Load CEL files listed in ADF
 allsamples <- ReadAffy(filenames=pData(adf)$Filename, phenoData=adf)
 
 # QC plots of raw data
 # Density plot
 png("images/QC_histogram.png", width=1000, height=1000)
+line <- par(lwd=2)
 hist(allsamples, 
-	main=paste(GSE,":Density plot of signal intensity"), 
-	col=pData(adf)$Color,
-	cex.main=2, cex.lab=2, cex.axis=2)
+	main=paste0(GSE,": Density plot of signal intensity"), 
+	col=pData(adf)$Color, cex.main=2, cex.lab=2, cex.axis=2)
 dev.off()
 
 # Boxplot for quantile distribution
 png("images/QC_boxplot.png", width=1000, height=1000)
-boxplot(allsamples, col=pData(adf)$Color, 
-	las=2, names=rownames(pData(adf)), 
-	main=paste(GSE,":Boxplot of signal intensity"), 
+boxplot(allsamples, 
+	col=pData(adf)$Color, las=2, names=rownames(pData(adf)), 
+	main=paste0(GSE,": Boxplot of signal intensity"), 
 	xlab='Samples', ylab='Log Intensity')
 dev.off()
 
@@ -52,14 +51,13 @@ write.table(called, file="MAS5calls.txt",
 # RMA-norm outputs log2 values
 # eset holds normalized data
 eset <- rma(allsamples)
-# Get matrix of normalized values
+# Matrix of normalized values
 RMA_values <- exprs(eset)
-# Change column header from filename to sample name
 colnames(RMA_values) <- rownames(pData(adf))
 # Boxplot normalized values
 png("images/RMA_boxplot.png")
-boxplot(RMA_values, col=pData(adf)$Color, 
-	las=2, names=rownames(pData(adf)), 
+boxplot(RMA_values, 
+	col=pData(adf)$Color, las=2, names=rownames(pData(adf)), 
 	main=paste(GSE,":Boxplot of normalized expression values"),
 	xlab='Samples', ylab='Log Intensity')
 dev.off()
@@ -91,69 +89,57 @@ text(s3d.coords$x, s3d.coords$y,
 	pos=3, offset=0.5)
 dev.off()
 
-
 # Rename samples in eset
 sampleNames(eset) <- rownames(pData(adf))
 
-# Annotating eset with gene names using MOE430v2 annotations
+#-------------SAMPLE ANNOTATION
 eset@annotation
-# ls("package:mouse4302.db")
-# Get transcript cluster IDs from eset, gene symbol, & gene name
+ls("package:mouse4302.db")
 ID <- featureNames(eset)
 Symbol <- getSYMBOL(ID, "mouse4302.db")
 Name <- as.character(lookUp(ID, "mouse4302.db", "GENENAME"))
-# Build annotation table, fix padding with 'NA' characters
 tmp <- data.frame(ID=ID, Symbol=Symbol, Name=Name, stringsAsFactors=F)
 tmp[tmp=="NA"] <- NA
-# Assign annotation table as feature data of eset
+# Annotation table as feature data of eset
 fData(eset) <- tmp
-# Show annotation keys in the database
-#keytypes(mouse4302.db)
-# Annotate eset with ENTREZID to map to gene signatures
-# Select some keys from the package, with PROBEID as primary key
+keytypes(mouse4302.db) #annotation keys
+# Annotate eset with ENTREZID - map to gene signatures
+# Key selection, PROBEID as primary key
 res <- select(mouse4302.db, keys=rownames(eset), 
 	columns=c("ENTREZID","PFAM", "GENENAME", "ENSEMBL","SYMBOL"), 
 	keytype="PROBEID")
-# Do a table join of eset and res
-# Match is done for exact mapping, as gene list may be scrambled
+# Table join of eset and res
+# Exact mapping as gene list may be scrambled
 idx <- match(rownames(eset), res$PROBEID)
-# Use the index to set phenotypic data in eset
-# fData(eset) before: (probe)ID, Symbol, and Name
-# fData(eset) after: PROBEID, ENTREZID, ENSEMBL, SYMBOL
+# Index sets phenotypic data in eset
 fData(eset) <- res[idx,]
-# Remove rows without ENTREZID annotation ie. mask false values
+# Mask false ENTREZID rows
 eset_t <- eset[is.na(fData(eset)$ENTREZID)==0,]
 
+#-------------FOLD CHANGE
 
-# Convert normalized expression values from log2 and check
+# log2 values to actual values
 RMA_values10 <- 2**RMA_values
-print(RMA_values[1:20,])
-print(RMA_values10[1:20,])
-# Check order of Sample Name and Probe IDs
-print(sampleNames(eset))
-print(probeNames(allsamples)[1:10])
-# Build simple FC table
+# Simple FC table
 treated_mean <- apply(RMA_values10[, c("CPC.1","CPC.2","CPC.3")], 1, mean)
 control_mean <- apply(RMA_values10[, c("Ctl.1","Ctl.2","Ctl.3")], 1, mean)
 fc_mean <- treated_mean/control_mean
 foldchange <- cbind(Symbol, Name, treated_mean, control_mean, fc_mean)
-colnames(foldchange)
 write.table(foldchange, file="foldchange.txt", 
 	quote=F, sep="\t", col.names=NA)
 
 #-------------LIMMA ANALYSIS
+
 # Construct design matrix, response~model
-# response: gene profiles
-# model: the formula used to predict the response
+# (gene profiles~formula used to predict the response)
 design <- model.matrix(~-1+factor(c(1,1,1,2,2,2)))
 colnames(design) <- unique(pData(adf)$Group)
-# Construct contrast matrix
-# Specifies which comparisons are to be made between groups
+# Contrast matrix: which group comparison(s)
 contrastmatrix <- makeContrasts(CPC-CTL, levels=design)
 
 # Fit the model lmFit(response, model)
 fit <- lmFit(eset_t, design)
-# Do contrasts w/borrowed variance to moderate the t-stats
+# Contrasts w/borrowed variance to moderate t-statistics
 fit2 <- eBayes(contrasts.fit(fit, contrastmatrix))
 
 # Top DEGs as specified in contrastmatrix
@@ -164,7 +150,7 @@ limmaresults <- topTable(fit2, coef=1, adjust="fdr", number=nrow(eset_t))
 write.table(limmaresults, "limmaresults.csv", 
 	sep=",", col.names=NA, row.names=TRUE)
 
-# Volcano plot of DEGs with cutoffs
+# DEGs Volcano plot with cutoffs
 png("images/volcano_DEgenes_padj.png", width=1000, height=800)
 EnhancedVolcano(
 	limmaresults, x="logFC", y="adj.P.Val", 
@@ -189,20 +175,19 @@ dev.off()
 
 # Load molecular signature db
 Mm.H <- readRDS("Mm.h.all.v7.1.entrez.rds")
-# Filter log2 values by the first 5000 DEGs from limma output
-# Convert ID list in mol sig db into an index in eset_t
+# Filter log2 values of first 5000 DEGs from limma
+# Convert Mm.H ID list into eset_t index
 # ids2indices(gene.sets, identifiers, remove.empty=TRUE)
 # CAMERA competitive test for Functional Enrichment
-# Reuse the design matrix and contrast matrix
+# Reuse the design & contrast matrix
 RMA_values_filt <- RMA_values[rownames(limmaresults)[1:5000],]
 H.indices <- ids2indices(Mm.H, limmaresults[1:5000,]$ENTREZID)
 camera_results <- camera(RMA_values_filt, index=H.indices,
 	design=design, contrast=contrastmatrix[,1],
 	weights=-log10(limmaresults[1:5000,"adj.P.Val"]))
-write.table(camera_results, "func.enrichment_camera.txt", 
-	sep="\t")
+write.table(camera_results, "func.enrichment_camera.txt", sep="\t")
 
-# Plot heatmap of CAMERA results
+# Heatmap of CAMERA results
 cm_annotate <- data.frame("Direction"=camera_results$Direction)
 rownames(cm_annotate) <- rownames(camera_results)
 png("images/heatmap_camera.png", height=1000, width=800)
@@ -243,6 +228,7 @@ dev.off()
 #sv <- squeezeVar(fit$sigma^2, df=fit$df.residual)
 
 #---------------SHINY DATA
+
 # Top 50 DEGs by Limma
 library(dplyr)
 PROBEID <- data.frame(limmaresults$PROBEID])
@@ -272,7 +258,6 @@ write.table(differential, "differential.csv",
 save(differential, file="differential.Rdata")
 
 #--------------SAVE
+
 #save.image("~/FGT/ICA1/workspace.RData")
 #writeLines(capture.output(sessionInfo()), "sessionInfo.txt")
-
-
