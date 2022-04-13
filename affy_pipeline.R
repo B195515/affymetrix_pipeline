@@ -27,7 +27,7 @@ allsamples <- ReadAffy(filenames=pData(adf)$Filename, phenoData=adf)
 
 # QC plots of raw data
 # Density plot
-png("QC_histogram.png", width=1000, height=1000)
+png("images/QC_histogram.png", width=1000, height=1000)
 hist(allsamples, 
 	main=paste(GSE,":Density plot of signal intensity"), 
 	col=pData(adf)$Color,
@@ -35,7 +35,7 @@ hist(allsamples,
 dev.off()
 
 # Boxplot for quantile distribution
-png("QC_boxplot.png", width=1000, height=1000)
+png("images/QC_boxplot.png", width=1000, height=1000)
 boxplot(allsamples, col=pData(adf)$Color, 
 	las=2, names=rownames(pData(adf)), 
 	main=paste(GSE,":Boxplot of signal intensity"), 
@@ -54,8 +54,10 @@ write.table(called, file="MAS5calls.txt",
 eset <- rma(allsamples)
 # Get matrix of normalized values
 RMA_values <- exprs(eset)
+# Change column header from filename to sample name
+colnames(RMA_values) <- rownames(pData(adf))
 # Boxplot normalized values
-png("RMA_boxplot.png")
+png("images/RMA_boxplot.png")
 boxplot(RMA_values, col=pData(adf)$Color, 
 	las=2, names=rownames(pData(adf)), 
 	main=paste(GSE,":Boxplot of normalized expression values"),
@@ -65,25 +67,23 @@ dev.off()
 # Dependency of log-ratio & mean intensity level of variables
 # x-axis = mean intensity, y-axis = log-ratio
 # Most points at 0 as majority of genes don't change
-png("MA_normalized_all.png", width=850, height=800)
+png("images/MA_normalized_all.png", width=850, height=800)
 mva.pairs(RMA_values, 
 	main=paste(GSE,":MVA plot of CPC vs Control samples"), 
 	ylim=c(-1.5,1.5))
 dev.off()
 
 # Features relationship by hierarchical clustering
-# Change column header from filename to sample name
-colnames(RMA_values) <- rownames(pData(adf))
 # Pearson's corr coeff for HC with average linkage
 HC <- hclust(as.dist(1-cor(RMA_values, method="pearson")), method="average")
-png("HC_pearsonavg_normalized.png")
+png("images/HC_pearsonavg_normalized.png")
 plot(HC)
 dev.off()
 
 # Determine artificial feats explaining variability
 # Transpose values matrix and scale variables to have unit variance
 pca <- prcomp(t(RMA_values), scale=T)
-png("PCA_normalized.png")
+png("images/PCA_normalized.png")
 s3d <- scatterplot3d(pca$x[,1:3], pch=19, color=rainbow(nrow(adf)))
 s3d.coords <- s3d$xyz.convert(pca$x[,1:3])
 text(s3d.coords$x, s3d.coords$y, 
@@ -91,10 +91,6 @@ text(s3d.coords$x, s3d.coords$y,
 	pos=3, offset=0.5)
 dev.off()
 
-# Convert normalized expression values from log2 and check
-RMA_values10 <- 2**RMA_values
-print(RMA_values[1:20,])
-print(RMA_values10[1:20,])
 
 # Rename samples in eset
 sampleNames(eset) <- rownames(pData(adf))
@@ -111,7 +107,28 @@ tmp <- data.frame(ID=ID, Symbol=Symbol, Name=Name, stringsAsFactors=F)
 tmp[tmp=="NA"] <- NA
 # Assign annotation table as feature data of eset
 fData(eset) <- tmp
+# Show annotation keys in the database
+#keytypes(mouse4302.db)
+# Annotate eset with ENTREZID to map to gene signatures
+# Select some keys from the package, with PROBEID as primary key
+res <- select(mouse4302.db, keys=rownames(eset), 
+	columns=c("ENTREZID","PFAM", "GENENAME", "ENSEMBL","SYMBOL"), 
+	keytype="PROBEID")
+# Do a table join of eset and res
+# Match is done for exact mapping, as gene list may be scrambled
+idx <- match(rownames(eset), res$PROBEID)
+# Use the index to set phenotypic data in eset
+# fData(eset) before: (probe)ID, Symbol, and Name
+# fData(eset) after: PROBEID, ENTREZID, ENSEMBL, SYMBOL
+fData(eset) <- res[idx,]
+# Remove rows without ENTREZID annotation ie. mask false values
+eset_t <- eset[is.na(fData(eset)$ENTREZID)==0,]
 
+
+# Convert normalized expression values from log2 and check
+RMA_values10 <- 2**RMA_values
+print(RMA_values[1:20,])
+print(RMA_values10[1:20,])
 # Check order of Sample Name and Probe IDs
 print(sampleNames(eset))
 print(probeNames(allsamples)[1:10])
@@ -133,8 +150,9 @@ colnames(design) <- unique(pData(adf)$Group)
 # Construct contrast matrix
 # Specifies which comparisons are to be made between groups
 contrastmatrix <- makeContrasts(CPC-CTL, levels=design)
+
 # Fit the model lmFit(response, model)
-fit <- lmFit(eset, design)
+fit <- lmFit(eset_t, design)
 # Do contrasts w/borrowed variance to moderate the t-stats
 fit2 <- eBayes(contrasts.fit(fit, contrastmatrix))
 
@@ -142,18 +160,16 @@ fit2 <- eBayes(contrasts.fit(fit, contrastmatrix))
 # 'coef' is contrastmatrix column
 # 'fdr' is FDR statistical adjustment
 # 'number' is maximum number of genes to list
-
-limmaresults <- topTable(fit2, coef=1, 
-	adjust="fdr", number=nrow(eset))
+limmaresults <- topTable(fit2, coef=1, adjust="fdr", number=nrow(eset_t))
 write.table(limmaresults, "limmaresults.csv", 
 	sep=",", col.names=NA, row.names=TRUE)
 
 # Volcano plot of DEGs with cutoffs
-png("volcano_DEgenes_padj.png", width=1000, height=800)
+png("images/volcano_DEgenes_padj.png", width=1000, height=800)
 EnhancedVolcano(
 	limmaresults, x="logFC", y="adj.P.Val", 
-	lab=limmaresults$Symbol, 
-	title=paste(GSE,":CPC versus Control"), 
+	lab=limmaresults$SYMBOL, 
+	title=paste0(GSE,": CPC versus Control"), 
 	subtitle="Limma results", 
 	labSize=6.0, pointSize=1.0, 
 	pCutoff=0.001, FCcutoff=4, 
@@ -165,58 +181,53 @@ dev.off()
 
 # Overlapping DEGs between groups
 classify <- classifyTestsF(fit2)
-png("vennDiagram_classified.png", width=1000, height=1000)
+png("images/vennDiagram_classified.png", width=1000, height=1000)
 vennDiagram(classify)
 dev.off()
 
 #-----------FUNCTIONAL ENRICHMENT ANALYSIS
+
 # Load molecular signature db
 Mm.H <- readRDS("Mm.h.all.v7.1.entrez.rds")
-
-# Show annotation keys in the database
-#keytypes(mouse4302.db)
-# Annotate eset with ENTREZID to map to gene signatures
-# Select some keys from the package, with PROBEID as primary key
-res <- select(mouse4302.db, keys=rownames(eset), 
-	columns=c("ENTREZID","ENSEMBL","SYMBOL"), 
-	keytype="PROBEID")
-
-# Do a table join of eset and res
-# Match is done for exact mapping, as gene list may be scrambled
-idx <- match(rownames(eset), res$PROBEID)
-
-# Use the index to set phenotypic data in eset
-# fData(eset) before: (probe)ID, Symbol, and Name
-# fData(eset) after: PROBEID, ENTREZID, ENSEMBL, SYMBOL
-fData(eset) <- res[idx,]
-
-# Remove rows without ENTREZID annotation ie. mask false values
-eset_t <- eset[is.na(fData(eset)$ENTREZID)==0,]
-
-# Reuse the design matrix and contrast matrix
-# for functional enrichment analysis
-
+# Filter log2 values by the first 5000 DEGs from limma output
 # Convert ID list in mol sig db into an index in eset_t
 # ids2indices(gene.sets, identifiers, remove.empty=TRUE)
-H.indices <- ids2indices(Mm.H, fData(eset_t)$ENTREZID)
-
 # CAMERA competitive test for Functional Enrichment
-camera_results <- camera(eset_t, index=H.indices, 
-	design=design, 
-	contrast=contrastmatrix[,1])
-write.table(camera_results, 
-	"func.enrichment_camera.txt", 
+# Reuse the design matrix and contrast matrix
+RMA_values_filt <- RMA_values[rownames(limmaresults)[1:5000],]
+H.indices <- ids2indices(Mm.H, limmaresults[1:5000,]$ENTREZID)
+camera_results <- camera(RMA_values_filt, index=H.indices,
+	design=design, contrast=contrastmatrix[,1],
+	weights=-log10(limmaresults[1:5000,"adj.P.Val"]))
+write.table(camera_results, "func.enrichment_camera.txt", 
 	sep="\t")
 
 # Plot heatmap of CAMERA results
-cm_matrix <- apply(camera_results[,c("PValue","FDR")], c(1,2), "*",-1)
 cm_annotate <- data.frame("Direction"=camera_results$Direction)
-rownames(cm_annotate) <- rownames(cm_matrix)
-png("heatmap_camera.png", height=1000, width=800)
-pheatmap(as.matrix(cm_matrix), 
+rownames(cm_annotate) <- rownames(camera_results)
+png("images/heatmap_camera.png", height=1000, width=800)
+pheatmap(as.matrix(camera_results[,c("PValue","FDR")]),
 	main=paste(GSE,":CAMERA Enriched Genes in CPC group over control"),
 	cluster_cols=F, annotation_row=cm_annotate, 
 	cutree_rows=4, fontsize=10)
+dev.off()
+
+# Barplot modified from https://github.com/YuLab-SMU/DOSE/issues/20
+library(ggplot2)
+library(forcats)
+cameraa <- camera_results
+cameraa$type <- "upregulated"
+cameraa$type[cameraa$Direction=="Down"] <- "downregulated"
+cameraa$term <- rownames(cameraa)
+png("images/barplot_camera.png", height=1000, width=800)
+p <- ggplot(cameraa, aes(x=NGenes/5000, y=fct_reorder(term, NGenes))) +
+	geom_point(aes(size=NGenes/5000, color=FDR)) +
+	theme_bw(base_size=14) +
+	scale_colour_gradient(limits=c(0,1), low="red") +
+	ylab(NULL) +
+	xlab("Gene ratio")
+	ggtitle(paste0(GSE,": CAMERA functional enrichment"))
+p + facet_grid(.~type)
 dev.off()
 
 # Other methods
@@ -231,16 +242,16 @@ dev.off()
 # in both the DEG analysis and the enrichment analysis
 #sv <- squeezeVar(fit$sigma^2, df=fit$df.residual)
 
-#save.image("~/FGT/ICA1/workspace.RData")
-
 #---------------SHINY DATA
 # Top 50 DEGs by Limma
 library(dplyr)
+PROBEID <- data.frame(limmaresults$PROBEID])
+colnames(PROBEID) <- "PROBEID"
 expression <- left_join(
 	limmaresults[1:50,], 
-	cbind(ID, RMA_values10), 
-	by="ID", keep=TRUE, copy=TRUE)
-rownames(expression) <- with(expression, paste(Symbol, ID.x, sep=" / "))
+	cbind(PROBEID, RMA_values10[rownames(limmaresults),]), 
+	by="PROBEID", keep=TRUE, copy=TRUE)
+rownames(expression) <- with(expression, paste(SYMBOL, PROBEID.x, sep="/"))
 # Select only cols with sample names, convert to num
 expression <- expression[,(ncol(expression)-6+1):ncol(expression)]
 expression[] <- lapply(expression, as.numeric)
@@ -252,10 +263,16 @@ experiment <- read.table("targets.txt",
 save(experiment, file="experiment.Rdata")
 
 # Volcano plot (-log10(FDR) vs log2FC) (csv, RData)
-differential <- limmaresults[, c("Symbol","logFC","P.Value","adj.P.Val","B")]
+differential <- limmaresults[, c("ENSEMBL","SYMBOL","logFC","P.Value","adj.P.Val","B")]
 differential$minus_log10_Pval <- -log10(limmaresults$adj.P.Val)
 #differential$sig <- as.factor(
 #	abs(differential$logFC) > 2 & differential$adj.P.Val < 0.01)
 write.table(differential, "differential.csv", 
 	sep=",", col.names=NA, row.names=TRUE)
 save(differential, file="differential.Rdata")
+
+#--------------SAVE
+#save.image("~/FGT/ICA1/workspace.RData")
+#writeLines(capture.output(sessionInfo()), "sessionInfo.txt")
+
+
